@@ -1,9 +1,9 @@
 /*
  * Flip The Switch — main entry point.
  *
- * T0 scaffold: boots a canvas and runs a fixed-timestep game loop.
- * update(dt) advances simulation in fixed steps; render(alpha) draws.
- * Enemies, player, combat, world, etc. land in later milestones (T1+).
+ * Fixed-timestep game loop. update(dt) advances simulation in fixed steps;
+ * render(alpha) draws. Scaffold (T0) established the loop; T1 adds the player
+ * (joystick movement + straight/uppercut attacks).
  */
 'use strict';
 
@@ -11,50 +11,52 @@
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
 
-  // Logical resolution the game is designed against. Rendering uses these
-  // dimensions regardless of the on-screen (CSS) size of the canvas.
-  const VIEW_W = canvas.width;
-  const VIEW_H = canvas.height;
+  const view = { w: canvas.width, h: canvas.height };
 
   // --- Fixed-timestep loop ------------------------------------------------
-  // Simulation runs at a constant rate (STEP seconds per update) so game
-  // behavior is deterministic and frame-rate independent. Rendering happens
-  // once per animation frame, interpolated by `alpha` between steps.
-  const STEP = 1 / 60;            // 60 simulation updates per second
-  const MAX_FRAME = 0.25;         // clamp huge gaps (e.g. tab was backgrounded)
+  const STEP = 1 / 60;
+  const MAX_FRAME = 0.25;
 
   let accumulator = 0;
   let lastTime = 0;
   let running = true;
 
-  // Minimal game state placeholder for the scaffold.
-  const state = {
-    time: 0,   // total simulated seconds
-    fps: 0,
-  };
+  const state = { time: 0, fps: 0 };
+
+  // --- Entities -----------------------------------------------------------
+  Input.init(canvas);
+  const player = createPlayer(view);
 
   function update(dt) {
     state.time += dt;
+    player.update(dt);
+  }
+
+  function drawGround(ctx) {
+    // Simple ground plane placeholder (parallax world arrives in T9).
+    const groundY = view.h - 90;
+    ctx.fillStyle = '#0b0b12';
+    ctx.fillRect(0, groundY, view.w, view.h - groundY);
+    ctx.strokeStyle = '#1b1b2a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, groundY);
+    ctx.lineTo(view.w, groundY);
+    ctx.stroke();
   }
 
   function render(alpha) {
-    // Clear to the dark gothic base.
+    // Dark gothic base.
     ctx.fillStyle = '#050507';
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.fillRect(0, 0, view.w, view.h);
 
-    // Scaffold placeholder so it's visibly "running".
-    ctx.fillStyle = '#5a5a7a';
-    ctx.font = '20px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('Flip The Switch', VIEW_W / 2, VIEW_H / 2 - 14);
+    drawGround(ctx);
+    player.draw(ctx);
+    Input.draw(ctx);
 
-    ctx.fillStyle = '#33334a';
-    ctx.font = '13px system-ui, sans-serif';
-    ctx.fillText('scaffold running (T0)', VIEW_W / 2, VIEW_H / 2 + 14);
-
-    // Live heartbeat so the loop is observably ticking.
+    // Debug heartbeat.
     ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = '#2a2a3a';
     ctx.font = '12px monospace';
     ctx.fillText('t=' + state.time.toFixed(1) + 's  fps=' + Math.round(state.fps), 10, 18);
@@ -75,13 +77,13 @@
       accumulator -= STEP;
     }
 
-    const alpha = accumulator / STEP;
-    render(alpha);
-
+    render(accumulator / STEP);
     requestAnimationFrame(frame);
   }
 
-  // Pause the loop when the tab is hidden so time doesn't jump on return.
+  // Debug/QA hook: inspect live state from the console (no effect on gameplay).
+  window.FTS = { state, player, view, input: Input };
+
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) {
       running = false;
