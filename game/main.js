@@ -27,9 +27,11 @@
   // --- Entities -----------------------------------------------------------
   Input.init(canvas);
   const player = createPlayer(view);
+  const waves = createWaveManager(view, player);
 
   function restart() {
     player.reset();
+    waves.reset();
     state.mode = 'playing';
     state.time = 0;
   }
@@ -38,6 +40,9 @@
     state.time += dt;
     if (state.mode === 'playing') {
       player.update(dt);
+      waves.update(dt);
+      // Player's active punch damages overlapping enemies (once per attack).
+      waves.applyPlayerAttack(player.activeHitbox());
       // Endless: there is deliberately NO win condition. The only end state
       // is loss when health reaches 0.
       if (!player.state.alive) state.mode = 'gameover';
@@ -76,6 +81,15 @@
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText('HP', x0, y0 - 6);
+
+    // Level + progress to next (top-right).
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(220,220,240,0.9)';
+    ctx.font = 'bold 20px system-ui, sans-serif';
+    ctx.fillText('LEVEL ' + waves.level, view.w - 20, 30);
+    ctx.fillStyle = 'rgba(180,180,210,0.55)';
+    ctx.font = '12px system-ui, sans-serif';
+    ctx.fillText('kills ' + waves.kills, view.w - 20, 48);
   }
 
   function drawGameOver() {
@@ -96,6 +110,7 @@
     ctx.fillRect(0, 0, view.w, view.h);
 
     drawGround();
+    waves.draw(ctx);
     player.draw(ctx);
     Input.draw(ctx);
     drawHUD();
@@ -125,7 +140,7 @@
   });
 
   // Debug/QA hook (no effect on gameplay).
-  window.FTS = { state, player, view, input: Input, restart,
+  window.FTS = { state, player, waves, view, input: Input, restart,
                  hurt: (n) => player.takeDamage(n || 1) };
 
   // --- Loop ---------------------------------------------------------------

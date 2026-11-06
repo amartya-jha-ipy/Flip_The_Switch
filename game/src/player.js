@@ -36,8 +36,10 @@ function createPlayer(view) {
     hurtTimer: 0,                   // brief i-frames + flash after a hit
 
     // Attack state machine.
-    attack: null,                   // { type, t, dur, dmg, angle, hit }
+    attack: null,                   // { type, t, dur, dmg, angle, id }
   };
+
+  let attackCounter = 0;            // unique id per attack instance
 
   // Apply damage. Returns true if the hit landed (not during i-frames).
   function takeDamage(amount) {
@@ -74,7 +76,7 @@ function createPlayer(view) {
     } else {
       angle = Input.aimUp() ? -0.5 : 0;
     }
-    p.attack = { type, t: 0, dur: def.dur, dmg: def.dmg, angle, def };
+    p.attack = { type, t: 0, dur: def.dur, dmg: def.dmg, angle, def, id: ++attackCounter };
   }
 
   function update(dt) {
@@ -110,14 +112,16 @@ function createPlayer(view) {
   // Current active-frame hitbox in world coords, or null.
   function activeHitbox() {
     if (!p.attack) return null;
-    const { t, def, angle, dmg, type } = p.attack;
+    const { t, def, angle, dmg, type, id } = p.attack;
     const [a0, a1] = def.active;
     if (t < a0 || t > a1) return null;
     const originX = p.x + p.facing * (p.w / 2);
     const originY = p.y - p.h * 0.55;
     const cx = originX + Math.cos(angle) * def.reach * p.facing;
     const cy = originY + Math.sin(angle) * def.reach;
-    return { x: cx, y: cy, w: def.boxW, h: def.boxH, dmg, type };
+    // `id` lets collision apply a punch once per enemy; `facing` lets enemies
+    // judge whether the hit came from the front (shield-block rule, T4).
+    return { x: cx, y: cy, w: def.boxW, h: def.boxH, dmg, type, id, facing: p.facing };
   }
 
   function draw(ctx) {
