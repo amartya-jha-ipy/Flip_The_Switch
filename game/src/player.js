@@ -20,6 +20,8 @@ function createPlayer(view) {
   const GROUND_Y = view.h - 90;     // baseline the player stands on
   const DEPTH_BAND = 46;            // how far up/down the player may shift
 
+  const MAX_HP = 5;                  // fixed by brief
+
   const p = {
     x: view.w * 0.35,
     y: GROUND_Y,
@@ -28,9 +30,34 @@ function createPlayer(view) {
     w: 34,
     h: 96,
 
+    hp: MAX_HP,
+    maxHp: MAX_HP,
+    alive: true,
+    hurtTimer: 0,                   // brief i-frames + flash after a hit
+
     // Attack state machine.
     attack: null,                   // { type, t, dur, dmg, angle, hit }
   };
+
+  // Apply damage. Returns true if the hit landed (not during i-frames).
+  function takeDamage(amount) {
+    if (!p.alive || p.hurtTimer > 0) return false;
+    p.hp = Math.max(0, p.hp - amount);
+    p.hurtTimer = 0.6;              // invulnerability window after a hit
+    if (p.hp <= 0) p.alive = false;
+    return true;
+  }
+
+  // Reset to a fresh run (endless — called on restart).
+  function reset() {
+    p.hp = MAX_HP;
+    p.alive = true;
+    p.hurtTimer = 0;
+    p.attack = null;
+    p.x = view.w * 0.35;
+    p.y = GROUND_Y;
+    p.facing = 1;
+  }
 
   const ATTACK_DEFS = {
     straight: { dur: 0.26, active: [0.06, 0.16], dmg: 1, reach: 62, boxW: 54, boxH: 30 },
@@ -51,6 +78,9 @@ function createPlayer(view) {
   }
 
   function update(dt) {
+    if (p.hurtTimer > 0) p.hurtTimer = Math.max(0, p.hurtTimer - dt);
+    if (!p.alive) return;           // no control while downed
+
     const mv = Input.move;
 
     // Horizontal movement + facing.
@@ -93,8 +123,10 @@ function createPlayer(view) {
   function draw(ctx) {
     // Player silhouette (placeholder; real art in T10).
     ctx.save();
-    ctx.fillStyle = '#12121a';
-    ctx.strokeStyle = '#3a3a52';
+    // Flash red briefly after taking a hit; dim when downed.
+    const flashing = p.hurtTimer > 0 && Math.floor(p.hurtTimer * 20) % 2 === 0;
+    ctx.fillStyle = !p.alive ? '#1a0e10' : (flashing ? '#3a1414' : '#12121a');
+    ctx.strokeStyle = flashing ? '#a04040' : '#3a3a52';
     ctx.lineWidth = 2;
 
     const bx = p.x - p.w / 2;
@@ -121,5 +153,5 @@ function createPlayer(view) {
     ctx.restore();
   }
 
-  return { state: p, update, draw, activeHitbox };
+  return { state: p, update, draw, activeHitbox, takeDamage, reset };
 }
