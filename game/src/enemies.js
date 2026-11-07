@@ -17,6 +17,8 @@
 // Baseline tuning (GDD §10). All knobs, tunable in T11.
 const KILLS_PER_LEVEL = 9;          // "~8-10 kills/level"
 const BASE_MAX_CONCURRENT = 3;      // T8 will scale this with level
+const BAT_MAX = 2;                  // max live bats at once
+const BAT_SPAWN_CHANCE = 0.28;      // ~25-30% per spawn check, from ~level 2
 
 const ENEMY_TYPES = {
   // --- Skeletons (T4) ---------------------------------------------------
@@ -299,6 +301,130 @@ function createEnemy(type, x, y, view) {
   return e;
 }
 
+// --- Bat (T6) -----------------------------------------------------------
+// A flying harasser. It follows from a distance (high, out of punch reach),
+// periodically SWOOPS to chip the player, and is killable ONLY by an uppercut
+// while it's low (a timed swoop kill, OR an uppercut aimed at another enemy
+// that also catches the bat — same thing: any uppercut hitbox that overlaps it
+// while low). Straight punches never affect it. Never spawns in a boss fight.
+const BAT_CFG = {
+  label: 'bat', w: 36, h: 16, hp: 1, swoopDmg: 1,
+  hoverOffset: 185,        // hover this far above the player's feet line
+  swoopDepth: 78,          // dips to player.y - this (inside uppercut reach)
+  followSpeed: 150, swoopSpeed: 360, retreatSpeed: 240,
+  swoopCdMin: 3.0, swoopCdMax: 5.0, contactX: 40,
+};
+
+function createBat(x, y, view) {
+  const cfg = BAT_CFG;
+  const e = {
+    type: 'bat', family: 'bat', isBat: true, cfg,
+    x, y, w: cfg.w, h: cfg.h,
+    hp: cfg.hp, maxHp: cfg.hp,
+    facing: 1,
+    state: 'enter',          // enter|follow|swoop|retreat|dying|dead
+    swoopCd: cfg.swoopCdMin + Math.random() * (cfg.swoopCdMax - cfg.swoopCdMin),
+    struck: false,
+    hitFlash: 0, dyingT: 0,
+    defeated: false, counted: false, dead: false,
+    lastHitId: -1,
+  };
+
+  // Collision box is centered on (x, y) — the bat flies, so y is NOT a feet line.
+  e.hitBox = function () { return { x: e.x, y: e.y, w: e.w, h: e.h }; };
+
+  // Bats are immune to everything but an uppercut, and an uppercut only
+  // overlaps when the bat is low (swooping) — that's the timing window.
+  e.applyHit = function (hitbox) {
+    if (e.state === 'dying' || e.dead) return 'ignored';
+    if (hitbox.id === e.lastHitId) return 'ignored';
+    e.lastHitId = hitbox.id;
+    if (hitbox.type !== 'uppercut') return 'ignored';   // straights do nothing
+    e.hp -= hitbox.dmg;
+    e.hitFlash = 0.12;
+    e.defeated = true;
+    e.state = 'dying';
+    e.dyingT = 0.2;
+    return 'killed';
+  };
+
+  e.update = function (dt, player, dealDamage) {
+    if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt);
+    if (e.state === 'dying') {
+      e.dyingT -= dt;
+      if (e.dyingT <= 0) { e.state = 'dead'; e.dead = true; }
+      return;
+    }
+
+    const ps = player.state;
+    const hoverY = ps.y - cfg.hoverOffset;
+    e.facing = ps.x >= e.x ? 1 : -1;
+    const moveToward = (tx, ty, sp) => {
+      const dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy) || 1;
+      e.x += (dx / d) * sp * dt;
+      e.y += (dy / d) * sp * dt;
+      return d;
+    };
+
+    if (e.state === 'enter') {
+      if (moveToward(ps.x, hoverY, cfg.swoopSpeed) < 14) e.state = 'follow';
+    } else if (e.state === 'follow') {
+      // Track the player horizontally while staying high (out of reach).
+      moveToward(ps.x, hoverY, cfg.followSpeed);
+      e.swoopCd -= dt;
+      if (e.swoopCd <= 0) { e.state = 'swoop'; e.struck = false; }
+    } else if (e.state === 'swoop') {
+      const d = moveToward(ps.x, ps.y - cfg.swoopDepth, cfg.swoopSpeed);
+      // Chip the player on contact (once per swoop).
+      if (!e.struck && Math.abs(ps.x - e.x) < cfg.contactX && e.y > ps.y - cfg.hoverOffset + 40) {
+        dealDamage(cfg.swoopDmg);
+        e.struck = true;
+      }
+      if (d < 16) e.state = 'retreat';
+    } else if (e.state === 'retreat') {
+      if (moveToward(e.x, hoverY, cfg.retreatSpeed) < 12) {
+        e.state = 'follow';
+        e.swoopCd = cfg.swoopCdMin + Math.random() * (cfg.swoopCdMax - cfg.swoopCdMin);
+      }
+    }
+  };
+
+  e.draw = function (ctx) {
+    ctx.save();
+    if (e.state === 'dying') ctx.globalAlpha = Math.max(0, e.dyingT / 0.2);
+    const low = e.state === 'swoop';                 // vulnerable window
+    const flashing = e.hitFlash > 0;
+    ctx.strokeStyle = flashing ? '#d08080' : (low ? '#caa8e0' : '#7a6a8a');
+    ctx.fillStyle = '#0d0a12';
+    ctx.lineWidth = 2;
+    // Body
+    ctx.beginPath();
+    ctx.ellipse(e.x, e.y, 6, 5, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    // Wings (a shallow V on each side; flap with a time-free phase from x).
+    const flap = Math.sin(e.x * 0.15) * 4;
+    ctx.beginPath();
+    ctx.moveTo(e.x - 5, e.y);
+    ctx.lineTo(e.x - 20, e.y - 6 + flap);
+    ctx.lineTo(e.x - 12, e.y + 4);
+    ctx.moveTo(e.x + 5, e.y);
+    ctx.lineTo(e.x + 20, e.y - 6 + flap);
+    ctx.lineTo(e.x + 12, e.y + 4);
+    ctx.stroke();
+    // Low-swoop cue: a faint "uppercut me" underline.
+    if (low) {
+      ctx.strokeStyle = 'rgba(200,160,230,0.5)';
+      ctx.beginPath();
+      ctx.moveTo(e.x - 12, e.y + 10);
+      ctx.lineTo(e.x + 12, e.y + 10);
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+
+  return e;
+}
+
 function createWaveManager(view, player) {
   const GROUND_Y = view.h - 90;
   const m = {
@@ -307,11 +433,19 @@ function createWaveManager(view, player) {
     kills: 0,
     killsThisLevel: 0,
     spawnTimer: 0.6,
+    bossActive: false,       // set by T7; bats never spawn while true
+    batTimer: 3.0,
   };
 
   function maxConcurrent() {
     // T3 baseline; T8 will grow this with level.
     return BASE_MAX_CONCURRENT;
+  }
+
+  function liveCount(pred) {
+    let n = 0;
+    for (const e of m.enemies) if (e.state !== 'dead' && pred(e)) n++;
+    return n;
   }
 
   function spawn() {
@@ -322,13 +456,29 @@ function createWaveManager(view, player) {
     m.enemies.push(createEnemy(pickSpawnType(), x, y, view));
   }
 
+  function spawnBat() {
+    const x = 40 + Math.random() * (view.w - 80);
+    m.enemies.push(createBat(x, -20, view));
+  }
+
   m.update = function (dt) {
-    // Spawn pacing.
-    if (m.enemies.length < maxConcurrent()) {
+    // Ground-enemy spawn pacing (bats don't count toward this cap).
+    if (!m.bossActive && liveCount((e) => !e.isBat) < maxConcurrent()) {
       m.spawnTimer -= dt;
       if (m.spawnTimer <= 0) {
         spawn();
         m.spawnTimer = 0.9 + Math.random() * 0.6;
+      }
+    }
+
+    // Bat spawning: from ~level 2, infrequent, 1-2 max, never in a boss fight.
+    if (!m.bossActive && m.level >= 2) {
+      m.batTimer -= dt;
+      if (m.batTimer <= 0) {
+        if (liveCount((e) => e.isBat) < BAT_MAX && Math.random() < BAT_SPAWN_CHANCE) {
+          spawnBat();
+        }
+        m.batTimer = 3.0 + Math.random() * 2.0;
       }
     }
 
@@ -363,8 +513,9 @@ function createWaveManager(view, player) {
     if (!hitbox) return [];
     const results = [];
     for (const e of m.enemies) {
-      // e.y is the feet; compare against the body's vertical center.
-      const box = { x: e.x, y: e.y - e.h / 2, w: e.w, h: e.h };
+      // Flying enemies supply their own centered box; ground enemies' y is the
+      // feet, so compare against the body's vertical center.
+      const box = e.hitBox ? e.hitBox() : { x: e.x, y: e.y - e.h / 2, w: e.w, h: e.h };
       if (aabbOverlap(hitbox, box)) {
         results.push(e.applyHit(hitbox));
       }
@@ -384,6 +535,8 @@ function createWaveManager(view, player) {
     m.kills = 0;
     m.killsThisLevel = 0;
     m.spawnTimer = 0.6;
+    m.bossActive = false;
+    m.batTimer = 3.0;
   };
 
   return m;
