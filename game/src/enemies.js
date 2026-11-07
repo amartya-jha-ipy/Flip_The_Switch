@@ -282,7 +282,15 @@ function createBat(x, y, view) {
   };
 
   // Collision box is centered on (x, y) — the bat flies, so y is NOT a feet line.
-  e.hitBox = function () { return { x: e.x, y: e.y, w: e.w, h: e.h }; };
+  // During a swoop, use the visible body envelope so the uppercut timing
+  // window is forgiving enough for normal play without making flying bats
+  // vulnerable while they are safely out of reach.
+  e.hitBox = function () {
+    if (e.state === 'swoop') {
+      return { x: e.x, y: e.y, w: 58, h: 64 };
+    }
+    return { x: e.x, y: e.y, w: e.w, h: e.h };
+  };
 
   // Bats are immune to everything but an uppercut, and an uppercut only
   // overlaps when the bat is low (swooping) — that's the timing window.
