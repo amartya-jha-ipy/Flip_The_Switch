@@ -125,7 +125,15 @@ function createPlayer(view) {
   }
 
   function draw(ctx) {
-    // Player silhouette (placeholder; real art in T10).
+    // Contact shadow (grounds the silhouette — Shadow-Fight read).
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(p.x, GROUND_Y + 2, p.w * 0.7, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Player silhouette.
     ctx.save();
     // Flash red briefly after taking a hit; dim when downed.
     const flashing = p.hurtTimer > 0 && Math.floor(p.hurtTimer * 20) % 2 === 0;
