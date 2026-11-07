@@ -41,13 +41,34 @@ const ENEMY_TYPES = {
     color: '#17171f', stroke: '#8aa0b4',
     weapon: 'sword', hasShield: true, guardOpenTime: 2.0,
   },
+
+  // --- Zombies (T5) -----------------------------------------------------
+  // Slower than skeletons. GDD §10 baseline.
+  zombie_normal: {
+    label: 'zombie', hp: 2, dmg: 1, speed: 52, w: 32, h: 80,
+    attackRange: 44, attackWindup: 0.60, attackCooldown: 1.4,
+    color: '#121a12', stroke: '#6a9a5a',
+    family: 'zombie', weapon: 'none', hasShield: false,
+  },
+  zombie_blast: {
+    // Tougher; on defeat it does NOT die immediately — it arms a 1-2s fuse,
+    // then detonates, damaging the player if within the blast radius.
+    label: 'blast zombie', hp: 3, dmg: 1, speed: 48, w: 34, h: 80,
+    attackRange: 44, attackWindup: 0.60, attackCooldown: 1.4,
+    color: '#1a1410', stroke: '#b87a3a',
+    family: 'zombie', weapon: 'none', hasShield: false,
+    blast: true, explosionDmg: 2, blastRadius: 62,
+    fuseMin: 1.0, fuseMax: 2.0,
+  },
 };
 
-// Weighted spawn pool for T4 (level-based mix shift arrives in T8).
+// Weighted spawn pool (level-based mix shift arrives in T8).
 const SPAWN_POOL = [
   ['skeleton_unarmed', 3],
   ['skeleton_sword', 2],
   ['skeleton_sword_shield', 1],
+  ['zombie_normal', 2],
+  ['zombie_blast', 1],
 ];
 
 function pickSpawnType() {
@@ -73,12 +94,15 @@ function createEnemy(type, x, y, view) {
     hp: cfg.hp, maxHp: cfg.hp,
     dmg: cfg.dmg, speed: cfg.speed, cfg,
     facing: -1,
-    state: 'approach',             // 'approach' | 'windup' | 'recover' | 'dying' | 'dead'
+    state: 'approach',             // approach|windup|dying|fuse|dead
     windupT: 0,
     cooldownT: 0,
     hitFlash: 0,
     blockFlash: 0,                 // feedback when a straight is shield-blocked
     dyingT: 0,
+    fuseT: 0,                      // blast zombie: time left on the fuse
+    defeated: false,               // hp hit 0 (scored once, even during fuse)
+    counted: false,                // kill already tallied by the wave manager
     lastHitId: -1,                 // last attack id that damaged this enemy
     dead: false,
     // Shielded enemies start guarded; an uppercut opens the guard for a window.
@@ -115,8 +139,15 @@ function createEnemy(type, x, y, view) {
     e.hp -= hitbox.dmg;
     e.hitFlash = 0.12;
     if (e.hp <= 0) {
-      e.state = 'dying';
-      e.dyingT = 0.25;
+      e.defeated = true;           // scored now; blast fuse runs before removal
+      if (cfg.blast) {
+        // Arm the fuse instead of dying immediately.
+        e.state = 'fuse';
+        e.fuseT = cfg.fuseMin + Math.random() * (cfg.fuseMax - cfg.fuseMin);
+      } else {
+        e.state = 'dying';
+        e.dyingT = 0.25;
+      }
       return 'killed';
     }
     return 'hit';
@@ -135,6 +166,19 @@ function createEnemy(type, x, y, view) {
     if (e.state === 'dying') {
       e.dyingT -= dt;
       if (e.dyingT <= 0) { e.state = 'dead'; e.dead = true; }
+      return;
+    }
+
+    if (e.state === 'fuse') {
+      // Defeated blast zombie counting down to detonation (telegraphed in draw).
+      e.fuseT -= dt;
+      if (e.fuseT <= 0) {
+        const dx = player.state.x - e.x;
+        const dy = player.state.y - e.y;
+        if (Math.hypot(dx, dy) <= cfg.blastRadius) dealDamage(cfg.explosionDmg);
+        e.state = 'dead';
+        e.dead = true;
+      }
       return;
     }
     if (e.cooldownT > 0) e.cooldownT = Math.max(0, e.cooldownT - dt);
@@ -212,8 +256,35 @@ function createEnemy(type, x, y, view) {
       ctx.restore();
     }
 
-    // Mini HP bar above the enemy (hidden at full for cleanliness).
-    if (e.hp < e.maxHp && !dying) {
+    // --- Blast zombie: volatile core + detonation telegraph ---
+    if (cfg.blast) {
+      // A glowing core marks it as a blast type even while alive, so the
+      // player can choose to finish it at a safe distance.
+      ctx.globalAlpha = dying ? ctx.globalAlpha : 1;
+      ctx.fillStyle = e.state === 'fuse' ? '#ff8a3a' : '#c8702a';
+      ctx.beginPath();
+      ctx.arc(e.x, by + 46, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (e.state === 'fuse') {
+      const danger = 1 - Math.max(0, e.fuseT) / cfg.fuseMax;   // 0 → 1 toward blast
+      const blink = Math.floor(e.fuseT * 12) % 2 === 0;
+      // Danger-zone ring showing the blast radius, intensifying as it nears.
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = 'rgba(230,90,40,' + (0.25 + 0.5 * danger).toFixed(3) + ')';
+      ctx.lineWidth = 2 + 2 * danger;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y - e.h * 0.4, cfg.blastRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      // Flashing body overlay.
+      if (blink) {
+        ctx.fillStyle = 'rgba(240,120,40,' + (0.3 + 0.4 * danger).toFixed(3) + ')';
+        ctx.fillRect(bx, by + 20, e.w, e.h - 20);
+      }
+    }
+
+    // Mini HP bar above the enemy (hidden at full / while fusing).
+    if (e.hp < e.maxHp && !dying && e.state !== 'fuse') {
       const bw = e.w + 6, bh = 4;
       const frac = Math.max(0, e.hp / e.maxHp);
       ctx.globalAlpha = 1;
@@ -266,10 +337,11 @@ function createWaveManager(view, player) {
       e.update(dt, player, (dmg) => player.takeDamage(dmg));
     }
 
-    // Reap the dead and count kills for leveling.
-    for (let i = m.enemies.length - 1; i >= 0; i--) {
-      if (m.enemies[i].dead) {
-        m.enemies.splice(i, 1);
+    // Score kills at the moment of defeat (hp 0), so a blast zombie counts
+    // when you down it, not after its fuse detonates.
+    for (const e of m.enemies) {
+      if (e.defeated && !e.counted) {
+        e.counted = true;
         m.kills++;
         m.killsThisLevel++;
         if (m.killsThisLevel >= KILLS_PER_LEVEL) {
@@ -277,6 +349,11 @@ function createWaveManager(view, player) {
           m.level++;
         }
       }
+    }
+
+    // Reap fully-dead enemies (after dying anim / blast detonation).
+    for (let i = m.enemies.length - 1; i >= 0; i--) {
+      if (m.enemies[i].dead) m.enemies.splice(i, 1);
     }
   };
 
