@@ -143,8 +143,12 @@ function createWorld(view) {
   }
 
   w.draw = function (ctx, level, bossActive) {
-    if (bossActive) drawBossArena(ctx);
-    else drawZone(ctx, w.zoneForLevel(level));
+    if (typeof Assets !== 'undefined' && Assets.drawBackground) {
+      Assets.drawBackground(ctx, view, w.scrollX, level, bossActive);
+    } else {
+      if (bossActive) drawBossArena(ctx);
+      else drawZone(ctx, w.zoneForLevel(level));
+    }
   };
 
   w.zoneName = (level) => ZONES[w.zoneForLevel(level)].name;

@@ -28,4 +28,6 @@ html, body {
   height: auto;
   image-rendering: auto;
   touch-action: none; /* we handle touch input ourselves later */
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.95), 0 0 15px rgba(120, 30, 45, 0.3);
+  border: 1px solid #201a28;
 }
