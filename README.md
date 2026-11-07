@@ -1,4 +1,4 @@
-# FLIP THE SWITCH
+# FistFall
 
 ### An Endless Dark-Fantasy 2D Beat-'Em-Up
 
@@ -18,7 +18,7 @@
 
 ## About the Game
 
-**Flip The Switch** is an endless 2D beat-'em-up where players fight through waves of increasingly dangerous enemies in a dark-fantasy world.
+**FistFall** is an endless 2D beat-'em-up where players fight through waves of increasingly dangerous enemies in a dark-fantasy world.
 
 Play as a lone fighter with two primary attacks: a fast straight punch and a powerful uppercut. Defeat enemies, earn kills, level up, encounter new enemy variants and survive increasingly difficult boss encounters.
 
@@ -108,7 +108,7 @@ The One-Eyed Ogre appears approximately every five levels in an isolated boss ar
 The game uses HTML5 Canvas and vanilla JavaScript. Input handling, player logic, enemy behaviour, world rendering and the main game loop are separated into focused modules.
 
 ```text
-                  FLIP THE SWITCH
+                  FistFall
                          |
                     index.html
                          |
@@ -168,7 +168,7 @@ The game uses HTML5 Canvas and vanilla JavaScript. Input handling, player logic,
 
 ### Multi-Agent Game Development
 
-Flip The Switch was developed using **Switch** to coordinate specialized AI agents through a shared GameForge room and GitHub repository.
+FistFall was developed using **Switch** to coordinate specialized AI agents through a shared GameForge room and GitHub repository.
 
 | Agent | Primary responsibility |
 | --- | --- |
@@ -288,13 +288,13 @@ Effective multi-agent development requires more than connecting multiple agents.
 
 ## Team
 
-**Project:** Flip The Switch
+**Project:** FistFall
 
 **Repository:** [amartya-jha-ipy/Flip_The_Switch](https://github.com/amartya-jha-ipy/Flip_The_Switch)
 
 **Collaboration environment:** Switch - GameForge
 
 <p align="center">
-  <strong>FLIP THE SWITCH</strong><br>
+  <strong>FistFall</strong><br>
   <em>One fighter. Endless enemies. How long will you survive?</em>
 </p>
