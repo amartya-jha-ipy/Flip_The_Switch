@@ -19,13 +19,46 @@ const KILLS_PER_LEVEL = 9;          // "~8-10 kills/level"
 const BASE_MAX_CONCURRENT = 3;      // T8 will scale this with level
 
 const ENEMY_TYPES = {
-  // Generic base enemy for T3. Variants arrive in T4/T5 with their own entries.
-  grunt: {
-    hp: 2, dmg: 1, speed: 74, w: 30, h: 84,
-    attackRange: 46, attackWindup: 0.45, attackCooldown: 1.1,
-    color: '#171720', stroke: '#473a3a',
+  // --- Skeletons (T4) ---------------------------------------------------
+  // HP is in straight-punch units (uppercut = 2). GDD §10 baseline.
+  skeleton_unarmed: {
+    label: 'unarmed', hp: 1, dmg: 1, speed: 82, w: 28, h: 82,
+    attackRange: 42, attackWindup: 0.40, attackCooldown: 1.0,
+    color: '#15151b', stroke: '#9a9a86',
+    weapon: 'none', hasShield: false,
+  },
+  skeleton_sword: {
+    label: 'sword', hp: 2, dmg: 1, speed: 72, w: 30, h: 84,
+    attackRange: 58, attackWindup: 0.50, attackCooldown: 1.1,
+    color: '#16161c', stroke: '#b8a860',
+    weapon: 'sword', hasShield: false,
+  },
+  skeleton_sword_shield: {
+    // ~4 effective HP; shield blocks frontal straight punches — open with an
+    // uppercut, which also drops the guard briefly so straights can follow.
+    label: 'sword+shield', hp: 4, dmg: 2, speed: 60, w: 32, h: 86,
+    attackRange: 52, attackWindup: 0.55, attackCooldown: 1.3,
+    color: '#17171f', stroke: '#8aa0b4',
+    weapon: 'sword', hasShield: true, guardOpenTime: 2.0,
   },
 };
+
+// Weighted spawn pool for T4 (level-based mix shift arrives in T8).
+const SPAWN_POOL = [
+  ['skeleton_unarmed', 3],
+  ['skeleton_sword', 2],
+  ['skeleton_sword_shield', 1],
+];
+
+function pickSpawnType() {
+  let total = 0;
+  for (const [, w] of SPAWN_POOL) total += w;
+  let r = Math.random() * total;
+  for (const [type, w] of SPAWN_POOL) {
+    if ((r -= w) < 0) return type;
+  }
+  return SPAWN_POOL[0][0];
+}
 
 function aabbOverlap(a, b) {
   return Math.abs(a.x - b.x) < (a.w + b.w) / 2 &&
@@ -44,20 +77,41 @@ function createEnemy(type, x, y, view) {
     windupT: 0,
     cooldownT: 0,
     hitFlash: 0,
+    blockFlash: 0,                 // feedback when a straight is shield-blocked
     dyingT: 0,
     lastHitId: -1,                 // last attack id that damaged this enemy
     dead: false,
+    // Shielded enemies start guarded; an uppercut opens the guard for a window.
+    guardOpen: cfg.hasShield ? false : true,
+    guardTimer: 0,
   };
 
-  // Default: nothing is blocked. T4 sword+shield overrides this.
-  e.blockCheck = function (/* hitbox */) { return false; };
+  // Returns true if the hit is BLOCKED. A shielded enemy blocks a FRONTAL
+  // straight punch while its guard is up. "Frontal" = the punch travels into
+  // the side the enemy is facing (hitbox.facing === -e.facing). Uppercuts are
+  // never blocked, and a hit from behind isn't either.
+  e.blockCheck = function (hitbox) {
+    if (!cfg.hasShield || e.guardOpen) return false;
+    if (hitbox.type !== 'straight') return false;
+    const frontal = hitbox.facing === -e.facing;
+    return frontal;
+  };
 
   // Apply a player punch. Returns 'blocked' | 'hit' | 'killed' | 'ignored'.
   e.applyHit = function (hitbox) {
     if (e.state === 'dying' || e.state === 'dead') return 'ignored';
     if (hitbox.id === e.lastHitId) return 'ignored';   // once per attack
     e.lastHitId = hitbox.id;
-    if (e.blockCheck(hitbox)) return 'blocked';
+    if (e.blockCheck(hitbox)) {
+      e.blockFlash = 0.15;
+      return 'blocked';
+    }
+    // An uppercut on a shielded enemy drops its guard for a window, so
+    // follow-up straight punches land ("open with an uppercut").
+    if (cfg.hasShield && hitbox.type === 'uppercut') {
+      e.guardOpen = true;
+      e.guardTimer = cfg.guardOpenTime;
+    }
     e.hp -= hitbox.dmg;
     e.hitFlash = 0.12;
     if (e.hp <= 0) {
@@ -70,6 +124,13 @@ function createEnemy(type, x, y, view) {
 
   e.update = function (dt, player, dealDamage) {
     if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt);
+    if (e.blockFlash > 0) e.blockFlash = Math.max(0, e.blockFlash - dt);
+
+    // Shield guard re-raises after its open window expires.
+    if (cfg.hasShield && e.guardOpen) {
+      e.guardTimer -= dt;
+      if (e.guardTimer <= 0) e.guardOpen = false;
+    }
 
     if (e.state === 'dying') {
       e.dyingT -= dt;
@@ -125,6 +186,32 @@ function createEnemy(type, x, y, view) {
     ctx.fill();
     ctx.stroke();
 
+    // --- Variant-distinguishing marks (full silhouette art lands in T10) ---
+    const front = e.facing;                  // +1 faces right, -1 faces left
+    const handY = by + 46;
+    // Sword: a blade extending from the leading hand.
+    if (cfg.weapon === 'sword') {
+      ctx.strokeStyle = flashing ? '#b05050' : '#c8c0a0';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(e.x + front * (e.w / 2), handY);
+      ctx.lineTo(e.x + front * (e.w / 2 + 26), handY - 18);
+      ctx.stroke();
+    }
+    // Shield: a rectangle on the facing (front) side. Lowered when guard open.
+    if (cfg.hasShield) {
+      const sx = e.x + front * (e.w / 2 + 2);
+      const sy = e.guardOpen ? handY + 10 : handY - 8;   // drops when opened
+      ctx.save();
+      ctx.globalAlpha = (dying ? ctx.globalAlpha : 1) * (e.guardOpen ? 0.5 : 1);
+      ctx.fillStyle = e.blockFlash > 0 ? '#d8e4f0' : '#3a4a5a';
+      ctx.strokeStyle = '#9ab0c4';
+      ctx.lineWidth = 2;
+      ctx.fillRect(sx - (front < 0 ? 8 : 0), sy, 8, 30);
+      ctx.strokeRect(sx - (front < 0 ? 8 : 0), sy, 8, 30);
+      ctx.restore();
+    }
+
     // Mini HP bar above the enemy (hidden at full for cleanliness).
     if (e.hp < e.maxHp && !dying) {
       const bw = e.w + 6, bh = 4;
@@ -161,7 +248,7 @@ function createWaveManager(view, player) {
     const fromLeft = Math.random() < 0.5;
     const x = fromLeft ? -20 : view.w + 20;
     const y = GROUND_Y - Math.random() * 40;
-    m.enemies.push(createEnemy('grunt', x, y, view));
+    m.enemies.push(createEnemy(pickSpawnType(), x, y, view));
   }
 
   m.update = function (dt) {
