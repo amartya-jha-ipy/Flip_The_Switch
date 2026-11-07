@@ -114,6 +114,20 @@ const Assets = (function () {
     ctx.restore();
   }
 
+  function drawGroundShadow(ctx, x, y, width, alpha) {
+    ctx.save();
+    ctx.translate(x, y + 2);
+    ctx.scale(1, 0.28);
+    const gradient = ctx.createRadialGradient(0, 0, 2, 0, 0, width);
+    gradient.addColorStop(0, `rgba(0, 0, 0, ${alpha})`);
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, width, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   // Helper to wrap seamless parallax horizontal offset
   function wrapped(offset, tile) {
     return -((offset % tile) + tile) % tile;
@@ -201,9 +215,11 @@ const Assets = (function () {
   function drawPlayer(ctx, p, animTime) {
     const img = get('player');
     const fw = 140, fh = 140;
+    const spriteScale = 1.2;
     const cx = p.x;
     const cy = p.y; // baseline at feet
 
+    drawGroundShadow(ctx, cx, cy, 34, 0.62);
     ctx.save();
     // Facing direction flip
     ctx.translate(cx, cy);
@@ -251,7 +267,11 @@ const Assets = (function () {
       // Anchor sprite: horizontally centered on feet, bottom aligned at cy - 18
       const sx = col * fw;
       const sy = row * fh;
-      ctx.drawImage(img, sx, sy, fw, fh, -fw / 2, -fh + 18, fw, fh);
+      ctx.shadowColor = 'rgba(8, 8, 18, 0.9)';
+      ctx.shadowBlur = 3;
+      ctx.drawImage(img, sx, sy, fw, fh,
+        -fw * spriteScale / 2, -fh * spriteScale + 18,
+        fw * spriteScale, fh * spriteScale);
     } else {
       // Fallback
       ctx.fillStyle = p.alive ? '#12121a' : '#221111';
@@ -266,6 +286,7 @@ const Assets = (function () {
   // -------------------------------------------------------------------------
   function drawEnemy(ctx, e, animTime) {
     const fw = 120, fh = 120;
+    const spriteScale = 1.16;
     const cx = e.x;
     const cy = e.y;
     const imgKey = e.type;
@@ -285,6 +306,7 @@ const Assets = (function () {
     const isWindup = e.state === 'windup';
     const isFuse = e.state === 'fuse';
 
+    drawGroundShadow(ctx, cx, cy, Math.max(26, e.w * 1.05), 0.5);
     if (dying) {
       col = 7;
     } else if (isFuse) {
@@ -298,7 +320,11 @@ const Assets = (function () {
 
     if (img && img.complete && img.naturalWidth > 0) {
       const sx = col * fw;
-      ctx.drawImage(img, sx, 0, fw, fh, -fw / 2, -fh + 16, fw, fh);
+      ctx.shadowColor = 'rgba(5, 6, 14, 0.95)';
+      ctx.shadowBlur = 3;
+      ctx.drawImage(img, sx, 0, fw, fh,
+        -fw * spriteScale / 2, -fh * spriteScale + 16,
+        fw * spriteScale, fh * spriteScale);
     } else {
       ctx.fillStyle = e.cfg ? e.cfg.color : '#222';
       ctx.fillRect(-e.w / 2, -e.h, e.w, e.h);
@@ -352,6 +378,7 @@ const Assets = (function () {
     const img = get('bat');
     const fw = 80, fh = 64;
 
+    drawGroundShadow(ctx, b.x, b.y + 26, 24, 0.35);
     ctx.save();
     ctx.translate(b.x, b.y);
     ctx.scale(b.facing, 1);
@@ -368,7 +395,10 @@ const Assets = (function () {
     }
 
     if (img && img.complete && img.naturalWidth > 0) {
-      ctx.drawImage(img, col * fw, 0, fw, fh, -fw / 2, -fh / 2, fw, fh);
+      ctx.shadowColor = 'rgba(18, 8, 32, 0.9)';
+      ctx.shadowBlur = 3;
+      ctx.drawImage(img, col * fw, 0, fw, fh,
+        -fw * 0.58, -fh * 0.58, fw * 1.16, fh * 1.16);
     } else {
       ctx.fillStyle = '#331a33';
       ctx.ellipse(0, 0, 14, 10, 0, 0, Math.PI * 2);
@@ -394,6 +424,7 @@ const Assets = (function () {
   function drawOgre(ctx, o, animTime) {
     const img = get('ogre');
     const fw = 220, fh = 200;
+    const spriteScale = 1.12;
 
     // 1. Attack telegraphs on the ground/air
     if (o.state === 'windup' || o.state === 'active') {
@@ -458,6 +489,7 @@ const Assets = (function () {
     }
 
     // 2. Boss Sprite
+    drawGroundShadow(ctx, o.x, o.y, 78, 0.75);
     ctx.save();
     ctx.translate(o.x, o.y);
     ctx.scale(o.facing, 1);
@@ -478,7 +510,11 @@ const Assets = (function () {
     }
 
     if (img && img.complete && img.naturalWidth > 0) {
-      ctx.drawImage(img, col * fw, 0, fw, fh, -fw / 2, -fh + 20, fw, fh);
+      ctx.shadowColor = 'rgba(7, 5, 12, 0.95)';
+      ctx.shadowBlur = 5;
+      ctx.drawImage(img, col * fw, 0, fw, fh,
+        -fw * spriteScale / 2, -fh * spriteScale + 20,
+        fw * spriteScale, fh * spriteScale);
     } else {
       ctx.fillStyle = '#401824';
       ctx.fillRect(-o.w / 2, -o.h, o.w, o.h);
