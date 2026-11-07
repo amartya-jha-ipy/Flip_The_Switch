@@ -26,12 +26,14 @@
 
   // --- Entities -----------------------------------------------------------
   Input.init(canvas);
+  const world = createWorld(view);
   const player = createPlayer(view);
   const waves = createWaveManager(view, player);
 
   function restart() {
     player.reset();
     waves.reset();
+    world.reset();
     state.mode = 'playing';
     state.time = 0;
   }
@@ -39,6 +41,7 @@
   function update(dt) {
     state.time += dt;
     if (state.mode === 'playing') {
+      world.update(dt);
       player.update(dt);
       waves.update(dt);
       // Player's active punch damages overlapping enemies (once per attack).
@@ -50,18 +53,6 @@
   }
 
   // --- Rendering ----------------------------------------------------------
-  function drawGround() {
-    const groundY = view.h - 90;
-    ctx.fillStyle = '#0b0b12';
-    ctx.fillRect(0, groundY, view.w, view.h - groundY);
-    ctx.strokeStyle = '#1b1b2a';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, groundY);
-    ctx.lineTo(view.w, groundY);
-    ctx.stroke();
-  }
-
   function drawHUD() {
     // Health pips (top-left).
     const hp = player.state.hp, max = player.state.maxHp;
@@ -90,6 +81,9 @@
     ctx.fillStyle = 'rgba(180,180,210,0.55)';
     ctx.font = '12px system-ui, sans-serif';
     ctx.fillText('kills ' + waves.kills, view.w - 20, 48);
+    // Current zone name.
+    ctx.fillStyle = 'rgba(150,150,180,0.5)';
+    ctx.fillText(waves.bossActive ? "Ogre's Lair" : world.zoneName(waves.level), view.w - 20, 64);
 
     // Boss health bar (top-center) during an ogre fight.
     if (waves.bossActive && waves.boss) {
@@ -126,17 +120,9 @@
   }
 
   function render() {
-    ctx.fillStyle = '#050507';
-    ctx.fillRect(0, 0, view.w, view.h);
+    // Parallax world (zone by level) or the enclosed boss arena.
+    world.draw(ctx, waves.level, waves.bossActive);
 
-    // Boss-arena cue: darker, warmer wash signalling the isolated fight.
-    // (Distinct enclosed ogre-lair framing arrives in T9.)
-    if (state.mode === 'playing' && waves.bossActive) {
-      ctx.fillStyle = 'rgba(30,8,10,0.55)';
-      ctx.fillRect(0, 0, view.w, view.h);
-    }
-
-    drawGround();
     waves.draw(ctx);
     player.draw(ctx);
     Input.draw(ctx);
@@ -167,7 +153,7 @@
   });
 
   // Debug/QA hook (no effect on gameplay).
-  window.FTS = { state, player, waves, view, input: Input, restart,
+  window.FTS = { state, player, waves, world, view, input: Input, restart,
                  hurt: (n) => player.takeDamage(n || 1) };
 
   // --- Loop ---------------------------------------------------------------
