@@ -211,14 +211,6 @@ The defect workflow was:
 
 **Human feedback -> QA bug report -> Developer fix -> QA retest -> Human approval**
 
-### This QA Agent Session
-
-The Switch QA agent also maintained a focused activity record for the current
-visual and combat verification work:
-[`QA-AGENT-ACTIVITY-2026-11-07.md`](production/bug-reports/QA-AGENT-ACTIVITY-2026-11-07.md).
-It records the screenshot capture process, visual comparison, bat defect
-reproduction, fix verification and pushed commits.
-
 ---
 
 ## Getting Started
