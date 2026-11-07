@@ -114,6 +114,9 @@ function createEnemy(type, x, y, view, level) {
     state: 'approach',             // approach|windup|dying|fuse|dead
     windupT: 0,
     cooldownT: 0,
+    // Standoff: each attacker holds a slightly different spot around the player
+    // instead of stacking on one point (T11 spacing/fairness tuning).
+    standoff: (Math.random() * 2 - 1) * 42,
     hitFlash: 0,
     blockFlash: 0,                 // feedback when a straight is shield-blocked
     dyingT: 0,
@@ -211,10 +214,12 @@ function createEnemy(type, x, y, view, level) {
         e.state = 'windup';
         e.windupT = cfg.attackWindup;
       } else if (!near) {
-        // Move toward the player.
-        const d = Math.hypot(dx, dy) || 1;
-        e.x += (dx / d) * cfg.speed * dt;
-        e.y += (dy / d) * cfg.speed * 0.5 * dt;
+        // Move toward a standoff spot beside the player (spreads the swarm).
+        const tdx = (ps.x + e.standoff) - e.x;
+        const tdy = ps.y - e.y;
+        const d = Math.hypot(tdx, tdy) || 1;
+        e.x += (tdx / d) * cfg.speed * dt;
+        e.y += (tdy / d) * cfg.speed * 0.5 * dt;
       }
     } else if (e.state === 'windup') {
       e.windupT -= dt;
@@ -230,6 +235,14 @@ function createEnemy(type, x, y, view, level) {
   };
 
   e.draw = function (ctx) {
+    // Contact shadow (grounds the silhouette).
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(e.x, e.y + 1, e.w * 0.65, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
     ctx.save();
     const dying = e.state === 'dying';
     if (dying) ctx.globalAlpha = Math.max(0, e.dyingT / 0.25);
@@ -247,7 +260,21 @@ function createEnemy(type, x, y, view, level) {
     ctx.fill();
     ctx.stroke();
 
-    // --- Variant-distinguishing marks (full silhouette art lands in T10) ---
+    // Windup telegraph: a readable "about to strike" flash in the attack
+    // direction, so incoming melee is dodgeable.
+    if (e.state === 'windup') {
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = 'rgba(230,90,70,0.9)';
+      ctx.lineWidth = 3;
+      const ay = by + 40;
+      ctx.beginPath();
+      ctx.arc(e.x + e.facing * (e.w / 2 + 10), ay, 12, -0.9, 0.9);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // --- Variant-distinguishing marks ---
     const front = e.facing;                  // +1 faces right, -1 faces left
     const handY = by + 46;
     // Sword: a blade extending from the leading hand.
@@ -405,6 +432,16 @@ function createBat(x, y, view) {
   };
 
   e.draw = function (ctx) {
+    // Faint ground shadow projected below the bat (shrinks when higher).
+    const groundY = view.h - 90;
+    const alt = Math.max(0, groundY - e.y);
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,' + (0.25 - Math.min(0.2, alt / 1200)).toFixed(3) + ')';
+    ctx.beginPath();
+    ctx.ellipse(e.x, groundY + 1, 14 - Math.min(8, alt / 24), 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
     ctx.save();
     if (e.state === 'dying') ctx.globalAlpha = Math.max(0, e.dyingT / 0.2);
     const low = e.state === 'swoop';                 // vulnerable window
@@ -556,6 +593,14 @@ function createOgre(x, y, view, hp) {
   };
 
   e.draw = function (ctx) {
+    // Big contact shadow under the boss.
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath();
+    ctx.ellipse(e.x, e.y + 2, e.w * 0.6, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
     ctx.save();
     if (e.state === 'dying') ctx.globalAlpha = Math.max(0, e.dyingT / 0.6);
     const flashing = e.hitFlash > 0;

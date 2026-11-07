@@ -22,13 +22,15 @@
   let lastTime = 0;
   let running = true;
 
-  const state = { time: 0, fps: 0, mode: 'playing' }; // 'playing' | 'gameover'
+  const state = { time: 0, fps: 0, mode: 'playing', // 'playing' | 'gameover'
+                  lastLevel: 1, lastZone: null, banner: null };
 
   // --- Entities -----------------------------------------------------------
   Input.init(canvas);
   const world = createWorld(view);
   const player = createPlayer(view);
   const waves = createWaveManager(view, player);
+  state.lastZone = world.zoneName(1);
 
   function restart() {
     player.reset();
@@ -36,14 +38,30 @@
     world.reset();
     state.mode = 'playing';
     state.time = 0;
+    state.lastLevel = 1;
+    state.lastZone = world.zoneName(1);
+    state.banner = null;
   }
 
   function update(dt) {
     state.time += dt;
+    if (state.banner) { state.banner.t -= dt; if (state.banner.t <= 0) state.banner = null; }
     if (state.mode === 'playing') {
       world.update(dt);
       player.update(dt);
       waves.update(dt);
+
+      // Level-up / zone-change banners (readability).
+      if (waves.level !== state.lastLevel) {
+        state.lastLevel = waves.level;
+        const zn = world.zoneName(waves.level);
+        if (zn !== state.lastZone) {
+          state.lastZone = zn;
+          state.banner = { text: 'ENTERING ' + zn.toUpperCase(), t: 2.2 };
+        } else {
+          state.banner = { text: 'LEVEL ' + waves.level, t: 1.5 };
+        }
+      }
       // Player's active punch damages overlapping enemies (once per attack).
       waves.applyPlayerAttack(player.activeHitbox());
       // Endless: there is deliberately NO win condition. The only end state
@@ -127,6 +145,28 @@
     player.draw(ctx);
     Input.draw(ctx);
     drawHUD();
+
+    // Hurt vignette: red edges flash when the player takes damage.
+    if (player.state.hurtTimer > 0 && player.state.alive) {
+      const a = Math.min(0.5, player.state.hurtTimer) * 0.8;
+      const vg = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * 0.35, view.w / 2, view.h / 2, view.h * 0.72);
+      vg.addColorStop(0, 'rgba(180,20,30,0)');
+      vg.addColorStop(1, 'rgba(180,20,30,' + a.toFixed(3) + ')');
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, view.w, view.h);
+    }
+
+    // Transient banner (level up / zone change).
+    if (state.banner) {
+      const b = state.banner;
+      ctx.globalAlpha = Math.min(1, b.t * 1.5);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(230,220,235,0.95)';
+      ctx.font = 'bold 30px system-ui, sans-serif';
+      ctx.fillText(b.text, view.w / 2, view.h * 0.28);
+      ctx.globalAlpha = 1;
+    }
 
     if (state.mode === 'gameover') drawGameOver();
 
