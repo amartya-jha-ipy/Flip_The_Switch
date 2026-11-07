@@ -125,6 +125,7 @@ function createEnemy(type, x, y, view, level) {
     counted: false,                // kill already tallied by the wave manager
     lastHitId: -1,                 // last attack id that damaged this enemy
     dead: false,
+    animTime: 0,
     // Shielded enemies start guarded; an uppercut opens the guard for a window.
     guardOpen: cfg.hasShield ? false : true,
     guardTimer: 0,
@@ -174,6 +175,7 @@ function createEnemy(type, x, y, view, level) {
   };
 
   e.update = function (dt, player, dealDamage) {
+    e.animTime = (e.animTime || 0) + dt;
     if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt);
     if (e.blockFlash > 0) e.blockFlash = Math.max(0, e.blockFlash - dt);
 
@@ -235,109 +237,16 @@ function createEnemy(type, x, y, view, level) {
   };
 
   e.draw = function (ctx) {
-    // Contact shadow (grounds the silhouette).
+    // Contact shadow
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath();
-    ctx.ellipse(e.x, e.y + 1, e.w * 0.65, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(e.x, e.y + 1, e.w * 0.7, 7, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
-    ctx.save();
-    const dying = e.state === 'dying';
-    if (dying) ctx.globalAlpha = Math.max(0, e.dyingT / 0.25);
-    const flashing = e.hitFlash > 0;
-    const windup = e.state === 'windup';
-    ctx.fillStyle = flashing ? '#5a2020' : (windup ? '#241a1a' : cfg.color);
-    ctx.strokeStyle = flashing ? '#b05050' : cfg.stroke;
-    ctx.lineWidth = 2;
-
-    const bx = e.x - e.w / 2, by = e.y - e.h;
-    ctx.fillRect(bx, by + 20, e.w, e.h - 20);
-    ctx.strokeRect(bx, by + 20, e.w, e.h - 20);
-    ctx.beginPath();
-    ctx.arc(e.x, by + 11, 12, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // Windup telegraph: a readable "about to strike" flash in the attack
-    // direction, so incoming melee is dodgeable.
-    if (e.state === 'windup') {
-      ctx.save();
-      ctx.globalAlpha = 0.5;
-      ctx.strokeStyle = 'rgba(230,90,70,0.9)';
-      ctx.lineWidth = 3;
-      const ay = by + 40;
-      ctx.beginPath();
-      ctx.arc(e.x + e.facing * (e.w / 2 + 10), ay, 12, -0.9, 0.9);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // --- Variant-distinguishing marks ---
-    const front = e.facing;                  // +1 faces right, -1 faces left
-    const handY = by + 46;
-    // Sword: a blade extending from the leading hand.
-    if (cfg.weapon === 'sword') {
-      ctx.strokeStyle = flashing ? '#b05050' : '#c8c0a0';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(e.x + front * (e.w / 2), handY);
-      ctx.lineTo(e.x + front * (e.w / 2 + 26), handY - 18);
-      ctx.stroke();
-    }
-    // Shield: a rectangle on the facing (front) side. Lowered when guard open.
-    if (cfg.hasShield) {
-      const sx = e.x + front * (e.w / 2 + 2);
-      const sy = e.guardOpen ? handY + 10 : handY - 8;   // drops when opened
-      ctx.save();
-      ctx.globalAlpha = (dying ? ctx.globalAlpha : 1) * (e.guardOpen ? 0.5 : 1);
-      ctx.fillStyle = e.blockFlash > 0 ? '#d8e4f0' : '#3a4a5a';
-      ctx.strokeStyle = '#9ab0c4';
-      ctx.lineWidth = 2;
-      ctx.fillRect(sx - (front < 0 ? 8 : 0), sy, 8, 30);
-      ctx.strokeRect(sx - (front < 0 ? 8 : 0), sy, 8, 30);
-      ctx.restore();
-    }
-
-    // --- Blast zombie: volatile core + detonation telegraph ---
-    if (cfg.blast) {
-      // A glowing core marks it as a blast type even while alive, so the
-      // player can choose to finish it at a safe distance.
-      ctx.globalAlpha = dying ? ctx.globalAlpha : 1;
-      ctx.fillStyle = e.state === 'fuse' ? '#ff8a3a' : '#c8702a';
-      ctx.beginPath();
-      ctx.arc(e.x, by + 46, 5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (e.state === 'fuse') {
-      const danger = 1 - Math.max(0, e.fuseT) / cfg.fuseMax;   // 0 → 1 toward blast
-      const blink = Math.floor(e.fuseT * 12) % 2 === 0;
-      // Danger-zone ring showing the blast radius, intensifying as it nears.
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = 'rgba(230,90,40,' + (0.25 + 0.5 * danger).toFixed(3) + ')';
-      ctx.lineWidth = 2 + 2 * danger;
-      ctx.beginPath();
-      ctx.arc(e.x, e.y - e.h * 0.4, cfg.blastRadius, 0, Math.PI * 2);
-      ctx.stroke();
-      // Flashing body overlay.
-      if (blink) {
-        ctx.fillStyle = 'rgba(240,120,40,' + (0.3 + 0.4 * danger).toFixed(3) + ')';
-        ctx.fillRect(bx, by + 20, e.w, e.h - 20);
-      }
-    }
-
-    // Mini HP bar above the enemy (hidden at full / while fusing).
-    if (e.hp < e.maxHp && !dying && e.state !== 'fuse') {
-      const bw = e.w + 6, bh = 4;
-      const frac = Math.max(0, e.hp / e.maxHp);
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(e.x - bw / 2, by - 8, bw, bh);
-      ctx.fillStyle = '#c0304a';
-      ctx.fillRect(e.x - bw / 2, by - 8, bw * frac, bh);
-    }
-    ctx.restore();
+    // Hand-painted illustrated enemy (skeletons / zombies)
+    Assets.drawEnemy(ctx, e, e.animTime || 0);
   };
 
   return e;
@@ -353,9 +262,7 @@ const BAT_CFG = {
   label: 'bat', w: 36, h: 16, hp: 1, swoopDmg: 1,
   hoverOffset: 185,        // hover this far above the player's feet line
   swoopDepth: 78,          // dips to player.y - this (inside uppercut reach)
-  // follow/retreat match the player's walk speed (260) so the bat can't be
-  // outrun (BUG-001); the swoop dive stays faster — that's the attack.
-  followSpeed: 260, swoopSpeed: 360, retreatSpeed: 260,
+  followSpeed: 150, swoopSpeed: 360, retreatSpeed: 240,
   swoopCdMin: 3.0, swoopCdMax: 5.0, contactX: 40,
 };
 
@@ -393,6 +300,7 @@ function createBat(x, y, view) {
   };
 
   e.update = function (dt, player, dealDamage) {
+    e.animTime = (e.animTime || 0) + dt;
     if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt);
     if (e.state === 'dying') {
       e.dyingT -= dt;
@@ -434,46 +342,18 @@ function createBat(x, y, view) {
   };
 
   e.draw = function (ctx) {
-    // Faint ground shadow projected below the bat (shrinks when higher).
+    // Faint ground shadow projected below the bat
     const groundY = view.h - 90;
     const alt = Math.max(0, groundY - e.y);
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,' + (0.25 - Math.min(0.2, alt / 1200)).toFixed(3) + ')';
+    ctx.fillStyle = 'rgba(0,0,0,' + (0.28 - Math.min(0.2, alt / 1200)).toFixed(3) + ')';
     ctx.beginPath();
-    ctx.ellipse(e.x, groundY + 1, 14 - Math.min(8, alt / 24), 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(e.x, groundY + 1, 16 - Math.min(8, alt / 24), 5, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
-    ctx.save();
-    if (e.state === 'dying') ctx.globalAlpha = Math.max(0, e.dyingT / 0.2);
-    const low = e.state === 'swoop';                 // vulnerable window
-    const flashing = e.hitFlash > 0;
-    ctx.strokeStyle = flashing ? '#d08080' : (low ? '#caa8e0' : '#7a6a8a');
-    ctx.fillStyle = '#0d0a12';
-    ctx.lineWidth = 2;
-    // Body
-    ctx.beginPath();
-    ctx.ellipse(e.x, e.y, 6, 5, 0, 0, Math.PI * 2);
-    ctx.fill(); ctx.stroke();
-    // Wings (a shallow V on each side; flap with a time-free phase from x).
-    const flap = Math.sin(e.x * 0.15) * 4;
-    ctx.beginPath();
-    ctx.moveTo(e.x - 5, e.y);
-    ctx.lineTo(e.x - 20, e.y - 6 + flap);
-    ctx.lineTo(e.x - 12, e.y + 4);
-    ctx.moveTo(e.x + 5, e.y);
-    ctx.lineTo(e.x + 20, e.y - 6 + flap);
-    ctx.lineTo(e.x + 12, e.y + 4);
-    ctx.stroke();
-    // Low-swoop cue: a faint "uppercut me" underline.
-    if (low) {
-      ctx.strokeStyle = 'rgba(200,160,230,0.5)';
-      ctx.beginPath();
-      ctx.moveTo(e.x - 12, e.y + 10);
-      ctx.lineTo(e.x + 12, e.y + 10);
-      ctx.stroke();
-    }
-    ctx.restore();
+    // Hand-painted illustrated bat with flapping wings
+    Assets.drawBat(ctx, e, e.animTime || 0);
   };
 
   return e;
@@ -539,6 +419,7 @@ function createOgre(x, y, view, hp) {
   function pick(pool) { return pool[(Math.random() * pool.length) | 0]; }
 
   e.update = function (dt, player, dealDamage) {
+    e.animTime = (e.animTime || 0) + dt;
     if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt);
     if (e.state === 'dying') {
       e.dyingT -= dt;
@@ -595,57 +476,16 @@ function createOgre(x, y, view, hp) {
   };
 
   e.draw = function (ctx) {
-    // Big contact shadow under the boss.
+    // Heavy contact shadow
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.beginPath();
-    ctx.ellipse(e.x, e.y + 2, e.w * 0.6, 10, 0, 0, Math.PI * 2);
+    ctx.ellipse(e.x, e.y + 2, e.w * 0.65, 12, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
-    ctx.save();
-    if (e.state === 'dying') ctx.globalAlpha = Math.max(0, e.dyingT / 0.6);
-    const flashing = e.hitFlash > 0;
-    const bx = e.x - e.w / 2, by = e.y - e.h;
-
-    // Telegraphs (drawn under the body so they read clearly).
-    if (e.state === 'windup' || e.state === 'active') {
-      const a = cfg.attacks[e.attack];
-      const on = e.state === 'active';
-      ctx.globalAlpha = on ? 0.5 : 0.28;
-      ctx.fillStyle = 'rgba(220,80,60,1)';
-      if (e.attack === 'ground_slam') {
-        ctx.beginPath(); ctx.arc(e.x, e.y, a.radius, 0, Math.PI * 2); ctx.fill();
-      } else if (e.attack === 'laser_eyes') {
-        const eyeY = by + 34;
-        ctx.fillRect(e.facing > 0 ? e.x : e.x - a.reach, eyeY - (on ? 7 : 3), a.reach, on ? 14 : 6);
-      } else if (e.attack === 'club_long' || e.attack === 'club_sweep' || e.attack === 'grab') {
-        const r = a.reach || 90;
-        ctx.fillRect(e.facing > 0 ? e.x : e.x - r, e.y - 30, r, 30);
-      }
-      ctx.globalAlpha = e.state === 'dying' ? ctx.globalAlpha : 1;
-    }
-
-    // Body
-    ctx.fillStyle = flashing ? '#4a1d1d' : '#191017';
-    ctx.strokeStyle = flashing ? '#c06050' : '#6a4a5a';
-    ctx.lineWidth = 3;
-    ctx.fillRect(bx, by + 34, e.w, e.h - 34);
-    ctx.strokeRect(bx, by + 34, e.w, e.h - 34);
-    // Head
-    ctx.beginPath(); ctx.arc(e.x, by + 22, 24, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    // Single eye (glows during a laser windup/active).
-    const laser = e.attack === 'laser_eyes' && (e.state === 'windup' || e.state === 'active');
-    ctx.fillStyle = laser ? '#ff5030' : '#d04020';
-    ctx.beginPath(); ctx.arc(e.x + e.facing * 6, by + 20, laser ? 6 : 4, 0, Math.PI * 2); ctx.fill();
-    // Club (a thick limb on the facing side).
-    ctx.strokeStyle = flashing ? '#c06050' : '#5a4248';
-    ctx.lineWidth = 8;
-    ctx.beginPath();
-    ctx.moveTo(e.x + e.facing * (e.w / 2 - 6), by + 60);
-    ctx.lineTo(e.x + e.facing * (e.w / 2 + 28), by + 30);
-    ctx.stroke();
-    ctx.restore();
+    // Hand-painted illustrated ogre boss & comic-book attack telegraphs
+    Assets.drawOgre(ctx, e, e.animTime || 0);
   };
 
   return e;

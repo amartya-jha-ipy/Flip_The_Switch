@@ -26,6 +26,7 @@
                   lastLevel: 1, lastZone: null, banner: null };
 
   // --- Entities -----------------------------------------------------------
+  if (typeof Assets !== 'undefined') Assets.init();
   Input.init(canvas);
   const world = createWorld(view);
   const player = createPlayer(view);
@@ -72,6 +73,11 @@
 
   // --- Rendering ----------------------------------------------------------
   function drawHUD() {
+    if (typeof Assets !== 'undefined' && Assets.drawHUD) {
+      Assets.drawHUD(ctx, view, player, waves, world);
+      return;
+    }
+
     // Health pips (top-left).
     const hp = player.state.hp, max = player.state.maxHp;
     const x0 = 20, y0 = 24, size = 22, gap = 8;
@@ -125,16 +131,19 @@
   }
 
   function drawGameOver() {
-    ctx.fillStyle = 'rgba(5,5,8,0.72)';
+    ctx.fillStyle = 'rgba(8, 6, 12, 0.85)';
     ctx.fillRect(0, 0, view.w, view.h);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#b03048';
-    ctx.font = '48px system-ui, sans-serif';
+    ctx.shadowColor = 'rgba(200, 30, 50, 0.9)';
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = '#d82848';
+    ctx.font = 'bold 54px Georgia, serif';
     ctx.fillText('YOU DIED', view.w / 2, view.h / 2 - 24);
-    ctx.fillStyle = '#9a9ab0';
-    ctx.font = '18px system-ui, sans-serif';
-    ctx.fillText('tap or press any key to restart', view.w / 2, view.h / 2 + 24);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#c5bed2';
+    ctx.font = '16px system-ui, sans-serif';
+    ctx.fillText('TAP OR PRESS ANY KEY TO RESTART', view.w / 2, view.h / 2 + 28);
   }
 
   function render() {

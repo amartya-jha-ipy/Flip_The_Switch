@@ -177,7 +177,12 @@ const Input = (function () {
     const pressedStraight = [...pointers.values()].some(r => r.role === 'straight');
     const pressedUpper = [...pointers.values()].some(r => r.role === 'uppercut');
 
-    // Joystick base + knob.
+    if (typeof Assets !== 'undefined' && Assets.drawControls) {
+      Assets.drawControls(ctx, JOY, joyKnob, BTN_STRAIGHT, BTN_UPPER, pressedStraight, pressedUpper);
+      return;
+    }
+
+    // Fallback: Joystick base + knob.
     ring(ctx, JOY.cx, JOY.cy, JOY.radius, 'rgba(60,60,90,0.15)', 'rgba(140,140,180,0.4)');
     ring(ctx, joyKnob.x, joyKnob.y, JOY.knob, 'rgba(150,150,200,0.3)', 'rgba(170,170,210,0.6)');
 

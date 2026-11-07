@@ -34,6 +34,7 @@ function createPlayer(view) {
     maxHp: MAX_HP,
     alive: true,
     hurtTimer: 0,                   // brief i-frames + flash after a hit
+    animTime: 0,
 
     // Attack state machine.
     attack: null,                   // { type, t, dur, dmg, angle, id }
@@ -80,6 +81,7 @@ function createPlayer(view) {
   }
 
   function update(dt) {
+    p.animTime += dt;
     if (p.hurtTimer > 0) p.hurtTimer = Math.max(0, p.hurtTimer - dt);
     if (!p.alive) return;           // no control while downed
 
@@ -121,48 +123,26 @@ function createPlayer(view) {
     const cy = originY + Math.sin(angle) * def.reach;
     // `id` lets collision apply a punch once per enemy; `facing` lets enemies
     // judge whether the hit came from the front (shield-block rule, T4).
-    return { x: cx, y: cy, w: def.boxW, h: def.boxH, dmg, type, id, facing: p.facing };
+    return { x: cx, y: cy, w: def.boxW, h: def.boxH, dmg, type, id, facing: p.facing, angle };
   }
 
   function draw(ctx) {
-    // Contact shadow (grounds the silhouette — Shadow-Fight read).
+    // Contact shadow
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.beginPath();
-    ctx.ellipse(p.x, GROUND_Y + 2, p.w * 0.7, 7, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x, p.y + 2, p.w * 0.8, 8, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
-    // Player silhouette.
-    ctx.save();
-    // Flash red briefly after taking a hit; dim when downed.
-    const flashing = p.hurtTimer > 0 && Math.floor(p.hurtTimer * 20) % 2 === 0;
-    ctx.fillStyle = !p.alive ? '#1a0e10' : (flashing ? '#3a1414' : '#12121a');
-    ctx.strokeStyle = flashing ? '#a04040' : '#3a3a52';
-    ctx.lineWidth = 2;
+    // Hand-painted illustrated brawler character
+    Assets.drawPlayer(ctx, p, p.animTime);
 
-    const bx = p.x - p.w / 2;
-    const by = p.y - p.h;
-    // Body
-    ctx.fillRect(bx, by + 22, p.w, p.h - 22);
-    ctx.strokeRect(bx, by + 22, p.w, p.h - 22);
-    // Head
-    ctx.beginPath();
-    ctx.arc(p.x, by + 12, 13, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // Facing marker (a small nub on the front).
-    ctx.fillStyle = '#5a5a7a';
-    ctx.fillRect(p.x + p.facing * (p.w / 2) - (p.facing < 0 ? 6 : 0), by + 40, 6, 10);
-
-    // Active punch hitbox, drawn so the directional aim is visible.
+    // Active punch crescent slash VFX
     const hb = activeHitbox();
     if (hb) {
-      ctx.fillStyle = hb.type === 'uppercut' ? 'rgba(180,140,255,0.5)' : 'rgba(140,200,255,0.5)';
-      ctx.fillRect(hb.x - hb.w / 2, hb.y - hb.h / 2, hb.w, hb.h);
+      Assets.drawAttackVFX(ctx, hb);
     }
-    ctx.restore();
   }
 
   return { state: p, update, draw, activeHitbox, takeDamage, reset };
