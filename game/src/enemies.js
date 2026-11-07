@@ -16,9 +16,13 @@
 
 // Baseline tuning (GDD §10). All knobs, tunable in T11.
 const KILLS_PER_LEVEL = 9;          // "~8-10 kills/level"
-const BASE_MAX_CONCURRENT = 3;      // T8 will scale this with level
+const BASE_MAX_CONCURRENT = 3;      // ground-enemy cap at level 1
+const MAX_CONCURRENT_CAP = 12;      // hard cap on-screen (GDD ~10-12)
 const BAT_MAX = 2;                  // max live bats at once
 const BAT_SPAWN_CHANCE = 0.28;      // ~25-30% per spawn check, from ~level 2
+// Per-level difficulty scaling (T8, GDD §10): enemies get tankier + hit harder.
+const HP_PER_LEVEL = 0.10;          // +10% HP per level
+const DMG_PER_LEVEL = 0.05;         // +5% damage per level
 
 const ENEMY_TYPES = {
   // --- Skeletons (T4) ---------------------------------------------------
@@ -64,23 +68,28 @@ const ENEMY_TYPES = {
   },
 };
 
-// Weighted spawn pool (level-based mix shift arrives in T8).
-const SPAWN_POOL = [
-  ['skeleton_unarmed', 3],
-  ['skeleton_sword', 2],
-  ['skeleton_sword_shield', 1],
-  ['zombie_normal', 2],
-  ['zombie_blast', 1],
-];
+// Level-scaled spawn mix (T8): early levels favor the easy types; higher
+// levels shift weight toward sword+shield skeletons and blast zombies.
+function spawnWeights(level) {
+  const L = level - 1;
+  return [
+    ['skeleton_unarmed', Math.max(1, 4 - 0.30 * L)],
+    ['skeleton_sword', 2 + 0.10 * L],
+    ['skeleton_sword_shield', 0.5 + 0.25 * L],
+    ['zombie_normal', 2],
+    ['zombie_blast', 0.5 + 0.20 * L],
+  ];
+}
 
-function pickSpawnType() {
+function pickSpawnType(level) {
+  const pool = spawnWeights(level || 1);
   let total = 0;
-  for (const [, w] of SPAWN_POOL) total += w;
+  for (const [, w] of pool) total += w;
   let r = Math.random() * total;
-  for (const [type, w] of SPAWN_POOL) {
+  for (const [type, w] of pool) {
     if ((r -= w) < 0) return type;
   }
-  return SPAWN_POOL[0][0];
+  return pool[0][0];
 }
 
 function aabbOverlap(a, b) {
@@ -88,13 +97,19 @@ function aabbOverlap(a, b) {
          Math.abs(a.y - b.y) < (a.h + b.h) / 2;
 }
 
-function createEnemy(type, x, y, view) {
+function createEnemy(type, x, y, view, level) {
   const cfg = ENEMY_TYPES[type];
+  // Per-level scaling: tankier + slightly harder-hitting at higher levels.
+  const lvl = level || 1;
+  const hpMult = 1 + HP_PER_LEVEL * (lvl - 1);
+  const dmgMult = 1 + DMG_PER_LEVEL * (lvl - 1);
+  const scaledHp = Math.max(1, Math.round(cfg.hp * hpMult));
+  const scaledDmg = Math.max(cfg.dmg, Math.round(cfg.dmg * dmgMult));
   const e = {
-    type, x, y,
+    type, x, y, level: lvl,
     w: cfg.w, h: cfg.h,
-    hp: cfg.hp, maxHp: cfg.hp,
-    dmg: cfg.dmg, speed: cfg.speed, cfg,
+    hp: scaledHp, maxHp: scaledHp,
+    dmg: scaledDmg, speed: cfg.speed, cfg,
     facing: -1,
     state: 'approach',             // approach|windup|dying|fuse|dead
     windupT: 0,
@@ -605,8 +620,8 @@ function createWaveManager(view, player) {
   };
 
   function maxConcurrent() {
-    // T3 baseline; T8 will grow this with level.
-    return BASE_MAX_CONCURRENT;
+    // Grows with level: +1 every 2 levels, capped (GDD ~10-12).
+    return Math.min(MAX_CONCURRENT_CAP, BASE_MAX_CONCURRENT + Math.floor((m.level - 1) / 2));
   }
 
   function liveCount(pred) {
@@ -620,7 +635,7 @@ function createWaveManager(view, player) {
     const fromLeft = Math.random() < 0.5;
     const x = fromLeft ? -20 : view.w + 20;
     const y = GROUND_Y - Math.random() * 40;
-    m.enemies.push(createEnemy(pickSpawnType(), x, y, view));
+    m.enemies.push(createEnemy(pickSpawnType(m.level), x, y, view, m.level));
   }
 
   function spawnBat() {
