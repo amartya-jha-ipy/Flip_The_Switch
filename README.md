@@ -286,7 +286,7 @@ Effective multi-agent development requires more than connecting multiple agents.
 
 ---
 
-## Team
+## Team Codemaniacs
 
 **Project:** FistFall
 
