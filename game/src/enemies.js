@@ -114,6 +114,9 @@ function createEnemy(type, x, y, view, level) {
     state: 'approach',             // approach|windup|dying|fuse|dead
     windupT: 0,
     cooldownT: 0,
+    // Standoff: each attacker holds a slightly different spot around the player
+    // instead of stacking on one point (T11 spacing/fairness tuning).
+    standoff: (Math.random() * 2 - 1) * 42,
     hitFlash: 0,
     blockFlash: 0,                 // feedback when a straight is shield-blocked
     dyingT: 0,
@@ -211,10 +214,12 @@ function createEnemy(type, x, y, view, level) {
         e.state = 'windup';
         e.windupT = cfg.attackWindup;
       } else if (!near) {
-        // Move toward the player.
-        const d = Math.hypot(dx, dy) || 1;
-        e.x += (dx / d) * cfg.speed * dt;
-        e.y += (dy / d) * cfg.speed * 0.5 * dt;
+        // Move toward a standoff spot beside the player (spreads the swarm).
+        const tdx = (ps.x + e.standoff) - e.x;
+        const tdy = ps.y - e.y;
+        const d = Math.hypot(tdx, tdy) || 1;
+        e.x += (tdx / d) * cfg.speed * dt;
+        e.y += (tdy / d) * cfg.speed * 0.5 * dt;
       }
     } else if (e.state === 'windup') {
       e.windupT -= dt;
