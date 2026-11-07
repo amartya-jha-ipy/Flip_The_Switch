@@ -90,6 +90,26 @@
     ctx.fillStyle = 'rgba(180,180,210,0.55)';
     ctx.font = '12px system-ui, sans-serif';
     ctx.fillText('kills ' + waves.kills, view.w - 20, 48);
+
+    // Boss health bar (top-center) during an ogre fight.
+    if (waves.bossActive && waves.boss) {
+      const b = waves.boss;
+      const bw = view.w * 0.5, bh = 14, bxc = (view.w - bw) / 2, byc = 74;
+      const frac = Math.max(0, b.hp / b.maxHp);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(bxc - 2, byc - 2, bw + 4, bh + 4);
+      ctx.fillStyle = '#7a1020';
+      ctx.fillRect(bxc, byc, bw, bh);
+      ctx.fillStyle = '#d83048';
+      ctx.fillRect(bxc, byc, bw * frac, bh);
+      ctx.strokeStyle = 'rgba(220,160,170,0.7)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bxc, byc, bw, bh);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(230,200,210,0.9)';
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.fillText('ONE-EYED OGRE', view.w / 2, byc - 6);
+    }
   }
 
   function drawGameOver() {
@@ -108,6 +128,13 @@
   function render() {
     ctx.fillStyle = '#050507';
     ctx.fillRect(0, 0, view.w, view.h);
+
+    // Boss-arena cue: darker, warmer wash signalling the isolated fight.
+    // (Distinct enclosed ogre-lair framing arrives in T9.)
+    if (state.mode === 'playing' && waves.bossActive) {
+      ctx.fillStyle = 'rgba(30,8,10,0.55)';
+      ctx.fillRect(0, 0, view.w, view.h);
+    }
 
     drawGround();
     waves.draw(ctx);

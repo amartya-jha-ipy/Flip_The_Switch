@@ -425,6 +425,170 @@ function createBat(x, y, view) {
   return e;
 }
 
+// --- Ogre boss (T7) -----------------------------------------------------
+// Periodic boss (~every 5 levels). The fight is isolated — the wave manager
+// clears other enemies and suppresses spawns while it's active.
+//   Long range: club swing + laser eyes (1 dmg).
+//   Short range: a RANDOM mix of ground-slam (2), grab (2), club-sweep (1),
+//   chosen unpredictably.
+// HP ~30 on first appearance, +25% each later appearance. Big silhouette with
+// a single eye; full arena framing lands in T9.
+const OGRE_CFG = {
+  baseHp: 30, w: 92, h: 150, speed: 42,
+  longRange: 170,            // dx beyond this → long-range attack pool
+  attackCd: 1.0,
+  attacks: {
+    club_long:   { range: 'long',  windup: 0.60, active: 0.16, dmg: 1, reach: 250, min: 70 },
+    laser_eyes:  { range: 'long',  windup: 0.70, active: 0.30, dmg: 1, reach: 620 },
+    ground_slam: { range: 'short', windup: 0.55, active: 0.20, dmg: 2, radius: 150 },
+    grab:        { range: 'short', windup: 0.45, active: 0.12, dmg: 2, reach: 90 },
+    club_sweep:  { range: 'short', windup: 0.42, active: 0.20, dmg: 1, reach: 160 },
+  },
+  longPool: ['club_long', 'laser_eyes'],
+  shortPool: ['ground_slam', 'grab', 'club_sweep'],
+};
+
+function createOgre(x, y, view, hp) {
+  const cfg = OGRE_CFG;
+  const e = {
+    type: 'ogre', family: 'ogre', isBoss: true, noScore: true, cfg,
+    x, y, w: cfg.w, h: cfg.h,
+    hp: hp, maxHp: hp,
+    facing: -1,
+    state: 'idle',             // idle|windup|active|recover|dying|dead
+    attack: null,              // current attack key
+    atkT: 0, cdT: 0.8,
+    beamTargetX: 0, struck: false,
+    hitFlash: 0, dyingT: 0,
+    defeated: false, counted: false, dead: false,
+    lastHitId: -1,
+  };
+
+  e.hitBox = function () { return { x: e.x, y: e.y - e.h / 2, w: e.w, h: e.h }; };
+
+  // Ogre is hurt by any punch (big HP bar). No shield.
+  e.applyHit = function (hitbox) {
+    if (e.state === 'dying' || e.dead) return 'ignored';
+    if (hitbox.id === e.lastHitId) return 'ignored';
+    e.lastHitId = hitbox.id;
+    e.hp -= hitbox.dmg;
+    e.hitFlash = 0.1;
+    if (e.hp <= 0) {
+      e.defeated = true;
+      e.state = 'dying';
+      e.dyingT = 0.6;
+      return 'killed';
+    }
+    return 'hit';
+  };
+
+  function pick(pool) { return pool[(Math.random() * pool.length) | 0]; }
+
+  e.update = function (dt, player, dealDamage) {
+    if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt);
+    if (e.state === 'dying') {
+      e.dyingT -= dt;
+      if (e.dyingT <= 0) { e.state = 'dead'; e.dead = true; }
+      return;
+    }
+
+    const ps = player.state;
+    const dx = ps.x - e.x;
+    e.facing = dx >= 0 ? 1 : -1;
+    const adx = Math.abs(dx);
+
+    if (e.state === 'idle') {
+      if (e.cdT > 0) e.cdT -= dt;
+      // Drift toward the player when out of range; otherwise choose an attack.
+      if (adx > cfg.longRange * 1.4) {
+        e.x += Math.sign(dx) * cfg.speed * dt;
+      } else if (e.cdT <= 0) {
+        const pool = adx > cfg.longRange ? cfg.longPool : cfg.shortPool;
+        e.attack = pick(pool);
+        e.state = 'windup';
+        e.atkT = cfg.attacks[e.attack].windup;
+        e.struck = false;
+        if (e.attack === 'laser_eyes') e.beamTargetX = ps.x;   // telegraph aim
+      }
+    } else if (e.state === 'windup') {
+      e.atkT -= dt;
+      if (e.atkT <= 0) { e.state = 'active'; e.atkT = cfg.attacks[e.attack].active; }
+    } else if (e.state === 'active') {
+      e.atkT -= dt;
+      if (!e.struck) {
+        const a = cfg.attacks[e.attack];
+        let hit = false;
+        const frontal = Math.sign(dx) === e.facing;
+        if (e.attack === 'club_long') {
+          hit = frontal && adx >= a.min && adx <= a.reach;
+        } else if (e.attack === 'laser_eyes') {
+          hit = frontal && adx <= a.reach && Math.abs(ps.x - e.beamTargetX) <= 46;
+        } else if (e.attack === 'ground_slam') {
+          const d = Math.hypot(ps.x - e.x, ps.y - e.y);
+          hit = d <= a.radius;
+        } else if (e.attack === 'grab') {
+          hit = frontal && adx <= a.reach;
+        } else if (e.attack === 'club_sweep') {
+          hit = frontal && adx <= a.reach;
+        }
+        if (hit) { dealDamage(a.dmg); e.struck = true; }
+      }
+      if (e.atkT <= 0) { e.state = 'recover'; e.atkT = 0.3; }
+    } else if (e.state === 'recover') {
+      e.atkT -= dt;
+      if (e.atkT <= 0) { e.state = 'idle'; e.cdT = cfg.attackCd; }
+    }
+  };
+
+  e.draw = function (ctx) {
+    ctx.save();
+    if (e.state === 'dying') ctx.globalAlpha = Math.max(0, e.dyingT / 0.6);
+    const flashing = e.hitFlash > 0;
+    const bx = e.x - e.w / 2, by = e.y - e.h;
+
+    // Telegraphs (drawn under the body so they read clearly).
+    if (e.state === 'windup' || e.state === 'active') {
+      const a = cfg.attacks[e.attack];
+      const on = e.state === 'active';
+      ctx.globalAlpha = on ? 0.5 : 0.28;
+      ctx.fillStyle = 'rgba(220,80,60,1)';
+      if (e.attack === 'ground_slam') {
+        ctx.beginPath(); ctx.arc(e.x, e.y, a.radius, 0, Math.PI * 2); ctx.fill();
+      } else if (e.attack === 'laser_eyes') {
+        const eyeY = by + 34;
+        ctx.fillRect(e.facing > 0 ? e.x : e.x - a.reach, eyeY - (on ? 7 : 3), a.reach, on ? 14 : 6);
+      } else if (e.attack === 'club_long' || e.attack === 'club_sweep' || e.attack === 'grab') {
+        const r = a.reach || 90;
+        ctx.fillRect(e.facing > 0 ? e.x : e.x - r, e.y - 30, r, 30);
+      }
+      ctx.globalAlpha = e.state === 'dying' ? ctx.globalAlpha : 1;
+    }
+
+    // Body
+    ctx.fillStyle = flashing ? '#4a1d1d' : '#191017';
+    ctx.strokeStyle = flashing ? '#c06050' : '#6a4a5a';
+    ctx.lineWidth = 3;
+    ctx.fillRect(bx, by + 34, e.w, e.h - 34);
+    ctx.strokeRect(bx, by + 34, e.w, e.h - 34);
+    // Head
+    ctx.beginPath(); ctx.arc(e.x, by + 22, 24, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    // Single eye (glows during a laser windup/active).
+    const laser = e.attack === 'laser_eyes' && (e.state === 'windup' || e.state === 'active');
+    ctx.fillStyle = laser ? '#ff5030' : '#d04020';
+    ctx.beginPath(); ctx.arc(e.x + e.facing * 6, by + 20, laser ? 6 : 4, 0, Math.PI * 2); ctx.fill();
+    // Club (a thick limb on the facing side).
+    ctx.strokeStyle = flashing ? '#c06050' : '#5a4248';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(e.x + e.facing * (e.w / 2 - 6), by + 60);
+    ctx.lineTo(e.x + e.facing * (e.w / 2 + 28), by + 30);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  return e;
+}
+
 function createWaveManager(view, player) {
   const GROUND_Y = view.h - 90;
   const m = {
@@ -433,8 +597,11 @@ function createWaveManager(view, player) {
     kills: 0,
     killsThisLevel: 0,
     spawnTimer: 0.6,
-    bossActive: false,       // set by T7; bats never spawn while true
+    bossActive: false,       // true during an ogre fight (isolated)
     batTimer: 3.0,
+    boss: null,              // the live ogre, or null
+    bossLevel: 5,            // next level that triggers a boss (~every 5)
+    bossCount: 0,            // ogres defeated so far (drives HP scaling)
   };
 
   function maxConcurrent() {
@@ -461,7 +628,29 @@ function createWaveManager(view, player) {
     m.enemies.push(createBat(x, -20, view));
   }
 
+  function startBoss() {
+    // Isolate the fight: remove all current enemies (and bats).
+    m.enemies.length = 0;
+    m.bossActive = true;
+    const hp = Math.round(OGRE_CFG.baseHp * Math.pow(1.25, m.bossCount));
+    const ogre = createOgre(view.w * 0.72, GROUND_Y, view, hp);
+    m.boss = ogre;
+    m.enemies.push(ogre);
+  }
+
+  function endBoss() {
+    m.bossActive = false;
+    m.boss = null;
+    m.bossCount++;
+    m.bossLevel += 5;          // next ogre ~5 levels later
+  }
+
   m.update = function (dt) {
+    // Trigger a boss when the level reaches the next boss threshold.
+    if (!m.bossActive && m.level >= m.bossLevel) {
+      startBoss();
+    }
+
     // Ground-enemy spawn pacing (bats don't count toward this cap).
     if (!m.bossActive && liveCount((e) => !e.isBat) < maxConcurrent()) {
       m.spawnTimer -= dt;
@@ -492,6 +681,7 @@ function createWaveManager(view, player) {
     for (const e of m.enemies) {
       if (e.defeated && !e.counted) {
         e.counted = true;
+        if (e.noScore) continue;     // boss doesn't count toward leveling
         m.kills++;
         m.killsThisLevel++;
         if (m.killsThisLevel >= KILLS_PER_LEVEL) {
@@ -504,6 +694,11 @@ function createWaveManager(view, player) {
     // Reap fully-dead enemies (after dying anim / blast detonation).
     for (let i = m.enemies.length - 1; i >= 0; i--) {
       if (m.enemies[i].dead) m.enemies.splice(i, 1);
+    }
+
+    // End the boss fight once the ogre is gone, then resume normal waves.
+    if (m.bossActive && (!m.boss || m.boss.dead)) {
+      endBoss();
     }
   };
 
@@ -537,6 +732,9 @@ function createWaveManager(view, player) {
     m.spawnTimer = 0.6;
     m.bossActive = false;
     m.batTimer = 3.0;
+    m.boss = null;
+    m.bossLevel = 5;
+    m.bossCount = 0;
   };
 
   return m;
