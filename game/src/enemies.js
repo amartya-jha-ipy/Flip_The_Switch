@@ -353,7 +353,9 @@ const BAT_CFG = {
   label: 'bat', w: 36, h: 16, hp: 1, swoopDmg: 1,
   hoverOffset: 185,        // hover this far above the player's feet line
   swoopDepth: 78,          // dips to player.y - this (inside uppercut reach)
-  followSpeed: 150, swoopSpeed: 360, retreatSpeed: 240,
+  // follow/retreat match the player's walk speed (260) so the bat can't be
+  // outrun (BUG-001); the swoop dive stays faster — that's the attack.
+  followSpeed: 260, swoopSpeed: 360, retreatSpeed: 260,
   swoopCdMin: 3.0, swoopCdMax: 5.0, contactX: 40,
 };
 
